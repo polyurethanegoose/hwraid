@@ -42,10 +42,6 @@ NestedLDTable = [[False for i in range(MaxNumLD)] for j in range(MaxNumHBA)]
 # Outputs is a 'dict' of all MegaCLI outputs so we can re-use them during loops..
 Outputs = {}
 
-# Startup
-def print_usage():
-    print 'Usage: megaraid-status [--nagios|--debug|--notemp]'
-
 # We need root access to query
 if __name__ == '__main__':
     try:
@@ -170,7 +166,7 @@ def returnConfDriveNumber(output):
     # Count the configured drives
     confdrives = 0
     for line in output:
-        if re.match(r'.*Number of PDs:.*$',line.strip()):
+        if re.match(r'.*Number of PDs:.*$', line.strip()):
             confdrives += int(line.split(':')[2].strip())
     return int(confdrives)
 
@@ -178,33 +174,33 @@ def returnUnConfDriveNumber(output):
     # Count the unconfigured drives
     confdrives = 0
     for line in output:
-        if re.match(r'^Firmware state: Unconfigured.*$',line.strip()):
+        if re.match(r'^Firmware state: Unconfigured.*$', line.strip()):
             confdrives += 1
-        if re.match(r'^Firmware state: Hotspare.*$',line.strip()):
+        if re.match(r'^Firmware state: Hotspare.*$', line.strip()):
             confdrives += 1
     return int(confdrives)
 
 def returnJBODDriveNumber(output):
-    # Count the configured drives
+    # Count the JBOD drives
     confdrives = 0
     for line in output:
-        if re.match(r'^Firmware state: JBOD.*$',line.strip()):
+        if re.match(r'^Firmware state: JBOD.*$', line.strip()):
             confdrives += 1
     return int(confdrives)
 
 def returnControllerModel(output):
     for line in output:
-        if re.match(r'^Product Name.*$',line.strip()):
+        if re.match(r'^Product Name.*$', line.strip()):
             return line.split(':')[1].strip()
 
 def returnMemorySize(output):
     for line in output:
-        if re.match(r'^Memory Size.*$',line.strip()):
+        if re.match(r'^Memory Size.*$', line.strip()):
             return line.split(':')[1].strip()
 
 def returnFirmwareVersion(output):
     for line in output:
-        if re.match(r'^FW Package Build.*$',line.strip()):
+        if re.match(r'^FW Package Build.*$', line.strip()):
             return line.split(':')[1].strip()
 
 def returnROCTemp(output):
@@ -214,10 +210,10 @@ def returnROCTemp(output):
         return str('N/A')
     else:
         for line in output:
-            if re.match(r'^ROC temperature :.*$',line.strip()):
+            if re.match(r'^ROC temperature :.*$', line.strip()):
                 tmpstr = line.split(':')[1].strip()
                 ROCtemp = re.sub(' +.*$', '', tmpstr)
-        if ( ROCtemp != '' ):
+        if (ROCtemp != ''):
             return str(str(ROCtemp)+'C')
         else:
             return str('N/A')
@@ -289,7 +285,7 @@ def returnHBAInfo(table, output, controllerid):
         cmd = '%s -AdpBbuCmd -GetBbuStatus -a%d -NoLog' % (megaclipath, controllerid)
         output = getOutput(cmd)
         controllerbbu = returnBBUStatus(output)
-        
+
     if controllermodel != 'Unknown':
         table.append([ 'c'+str(controllerid), controllermodel, controllerram, str(controllertemp), str(controllerbbu), str('FW: '+controllerrev) ])
 
@@ -568,6 +564,79 @@ def returnUnconfDiskInfo(output,controllerid):
                     dbgprint('Unconfigured Disk: Arrayid: '+str(arrayid)+' DiskId: '+str(diskid)+' '+str(olddiskid)+' '+str(fstate))
                 elif subfstate == 'Online, Spun Up':
                     dbgprint('Online Disk: Arrayid: '+str(arrayid)+' DiskId: '+str(diskid)+' '+str(olddiskid)+' '+str(fstate))
+                table.append([ mtype, model, dsize, fstate, speed, temp, enclid, slotid, lsidid])
+    return table
+
+def returnJBODDiskInfo(output,controllerid):
+    arrayid = False
+    diskid = False
+    olddiskid = False
+    enclid = False
+    slotid = False
+    lsidid = 'Unknown'
+    table = []
+    fstate = 'Offline'
+    substate = 'Unknown'
+    model = 'Unknown'
+    speed = 'Unknown'
+    mtype = 'Unknown'
+    dsize = 'Unknown'
+    temp = 'Unk0C'
+    for line in output:
+        if re.match(r'Enclosure Device ID: .*$',line.strip()):
+        # We match here early in the analysis so reset the vars if this is a new disk we're reading..
+            oldenclid = enclid
+            enclid = line.split(':')[1].strip().replace("N/A","")
+            if oldenclid != False:
+                arrayid = False
+                fstate = 'Offline'
+                model = 'Unknown'
+                speed = 'Unknown'
+                temp = 'Unk0C'
+                slotid = False
+                lsidid = 'Unknown'
+
+        elif re.match(r'^Coerced Size: ',line.strip()):
+            dsize = line.split(':')[1].strip()
+            dsize = re.sub(' \[.*\.*$', '', dsize)
+            dsize = re.sub('[0-9][0-9] GB', ' Gb', dsize)
+        elif re.match(r'^Drive.s position: DiskGroup: [0-9]+,.*$',line.strip()):
+            arrayid = line.split(',')[1].split(':')[1].strip()
+        elif re.match(r'^Device Id: [0-9]+.*$',line.strip()):
+            diskid = line.split(':')[1].strip()
+        if re.match(r'^Device Id: .*$',line.strip()):
+            lsidid = line.split(':')[1].strip()
+        elif re.match(r'Slot Number: .*$',line.strip()):
+            slotid = line.split(':')[1].strip()
+        elif re.match(r'Firmware state: .*$',line.strip()):
+            fstate = line.split(':')[1].strip()
+            subfstate = re.sub('\(.*', '', fstate)
+            dbgprint('Firmware State: '+str(fstate)+' '+str(subfstate))
+        elif re.match(r'Inquiry Data: .*$',line.strip()):
+            model = line.split(':')[1].strip()
+            model = re.sub(' +', ' ', model)
+            manuf = re.sub(' .*', '', model)
+            dtype = re.sub(manuf+' ', '', model)
+            dtype = re.sub(' .*', '', dtype)
+            hwserial = re.sub('.*'+dtype+' *', '', model)
+        elif re.match(r'^Media Type: .*$',line.strip()):
+            mtype = line.split(':')[1].strip()
+            if mtype == 'Hard Disk Device':
+                mtype = 'HDD'
+            else:
+                if mtype == 'Solid State Device':
+                    mtype = 'SSD'
+                else:
+                    mtype = 'N/A'
+        elif re.match(r'Device Speed: .*$',line.strip()):
+            speed = line.split(':')[1].strip()
+        elif re.match(r'Drive Temperature :.*$',line.strip()):
+            temp = line.split(':')[1].strip()
+            temp = re.sub('\(.*\)', '', temp)
+            # Drive temp is amongst the last few lines matched, decide here if we add information to the table..
+            if arrayid == False:
+                if subfstate == 'JBOD':
+                    dbgprint('JBOD Disk: Arrayid: '+str(arrayid)+' DiskId: '+str(diskid)+' '+str(olddiskid)+' '+str(fstate))
                 table.append([ mtype, model, dsize, fstate, speed, temp, enclid, slotid, lsidid])
     return table
 
@@ -886,8 +955,52 @@ dbgprint('Total JBOD Drives : ' + str(totaljboddrivenumber))
 dbgprint('Total Unconfigured Drives : ' + str(totalunconfdrivenumber))
 
 if totaljboddrivenumber:
+    '''TODO: How we map JBOD drives to 'OS Path'?'''
     if not args.nagiosmode:
         print '-- JBOD information --'
+
+    controllerid = 0
+    while controllerid < controllernumber:
+        arrayid = 0
+
+        cmd = '%s -LDInfo -lall -a%d -NoLog' % (megaclipath, controllerid)
+        output = getOutput(cmd)
+        arraynumber = returnArrayNumber(output)
+        #### BUG: -LdPdInfo shows all PD on the adapter, not just for given LD..
+        #### while arrayid <= arraynumber:
+
+        cmd = '%s -PDList -a%d -NoLog' % (megaclipath, controllerid)
+        output = getOutput(cmd)
+        arraydisk = returnJBODDiskInfo(output,controllerid)
+
+        mlen = returnWdthFromArrayCol(arraydisk,1)
+        flen = returnWdthFromArrayCol(arraydisk,3)
+
+        # Adjust print format with widths computed above
+        drvfmt = "%-7s | %-4s | %-"+str(mlen)+"s | %-8s | %-"+str(flen+2)+"s | %-8s | %-4s | %-8s | %-8s"
+        i = 0
+        for array in arraydisk:
+            # Header
+            if ( i == 0 ):
+                if not args.nagiosmode:
+                    print drvfmt % (
+                    "-- ID", "Type", "Drive Model", "Size", "Status", "Speed", "Temp", "Slot ID", "LSI Device ID")
+            # Drive information
+            if not args.nagiosmode:
+                print drvfmt % (
+                    str('c'+str(controllerid)+'uXpY'),                # cXpY
+                    array[0],                            # HDD/SDD
+                    array[1],                            # Model Information (Variable len)
+                    array[2],                            # Size
+                    array[3],                            # Status (Variable len)
+                    array[4],                            # Speed
+                    array[5],                            # Temp
+                    str('['+array[6]+':'+array[7]+']'),                # Slot ID
+                    array[8])                            # LSI ID
+            i = i + 1
+        controllerid += 1
+    if not args.nagiosmode:
+        print ''
 
 if totalunconfdrivenumber:
     if not args.nagiosmode:
@@ -947,6 +1060,12 @@ if args.nagiosmode:
     if bad:
         print 'RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk)
         sys.exit(2)
+    # Battery in Learning Mode means that it will disable cache when charge is low
+	# when this happens there can be some performance issues.
+	# We want to be notified about that.
+    elif batterylearning:
+        print 'BATTERY IN LEARNING MODE - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk)
+        sys.exit(1)
     else:
         print 'RAID OK - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk)
 else:
