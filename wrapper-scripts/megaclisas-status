@@ -55,23 +55,15 @@ if __name__ == '__main__':
 		sys.exit(5)
 
 # Check command line arguments to enable nagios or not
-if len(sys.argv) > 2:
-	print_usage()
-	sys.exit(1)
+parser = argparse.ArgumentParser()
+parser.add_argument('--nagios', action='store_true', dest='nagiosmode', help='Prints information in Nagios format')
+parser.add_argument('--debug', action='store_true', dest='debugmode', help='Print additional messages to stdout')
+parser.add_argument('--notemp', action='store_true', dest='notempmode', help='Do not display temperature.')
+args = parser.parse_args()
 
-if len(sys.argv) > 1:
-	if sys.argv[1] == '--nagios':
-		nagiosmode = True
-	elif sys.argv[1] == '--debug':
-		debugmode = True
-	elif sys.argv[1] == '--notemp':
-		notempmode = True
-	else:
-		print_usage()
-		sys.exit(1)
 # Functions
 def dbgprint(msg):
-	if (debugmode):
+	if (args.debugmode):
 		sys.stderr.write ( str('# DEBUG : '+msg+'\n'))
 
 def is_exe(fpath):
@@ -110,7 +102,7 @@ if (megaclipath != None):
 	if os.path.exists(megaclipath) and os.access(megaclipath, os.X_OK):
 		pass
 	else:
-		if nagiosmode:
+		if args.nagiosmode:
 			print 'UNKNOWN - Cannot find '+megaclipath
 		else:
 			print 'Cannot find ' + megaclipath + 'in your PATH. Please install it.'
@@ -199,7 +191,7 @@ def returnFirmwareVersion(output):
 def returnROCTemp(output):
 	ROCtemp = ''
 	tmpstr = ''
-	if (notempmode):
+	if (args.notempmode):
 		return str('N/A')
 	else:
 		for line in output:
@@ -463,7 +455,7 @@ def returnDiskInfo(output,controllerid):
 		elif re.match(r'Device Speed: .*$',line.strip()):
 			speed = line.split(':')[1].strip()
 		elif re.match(r'Drive Temperature :.*$',line.strip()):
-			if (notempmode):
+			if (args.notempmode):
 				temp = 'N/A'
 			else:
 				# Drive temp is amongst the last few lines matched, decide here if we add information to the table..
@@ -627,7 +619,7 @@ if printbbustatus:
 # List available controller
 if printcontroller:
 	if controllernumber:
-		if not nagiosmode:
+		if not args.nagiosmode:
 			print '-- Controller information --'
 
 		i = 0
@@ -646,9 +638,9 @@ if printcontroller:
 			hbafmt = str('%-5s | %-'+str(mlen)+'s | %-6s | %-4s | %-6s | %-12s ')
 			# Header
 			if ( i == 0 ):
-				if not nagiosmode:
+				if not args.nagiosmode:
 					print hbafmt % ("-- ID","H/W Model","RAM","Temp","BBU", "Firmware")
-			if not nagiosmode:
+			if not args.nagiosmode:
 				print hbafmt % (
 					hba[0],
 					hba[1],
@@ -657,14 +649,14 @@ if printcontroller:
 					hba[4],
 					hba[5])
 			i += 1
-		if not nagiosmode:
+		if not args.nagiosmode:
 			print ''
 	else:
 		print "No MegaRAID or PERC adapter detected on your system!"
 		exit(1)
 
 if printarray:
-	if not nagiosmode:
+	if not args.nagiosmode:
 		print '-- Array information --'
 
 	controllerid = 0
@@ -743,9 +735,9 @@ if printarray:
 			ldfmt = str('%-5s | %-'+str(rlen)+'s | %7s | %7s | %'+str(mlen)+'s | %8s | %8s | %8s | %-'+str(clen)+'s |%-12s ')
 			# Header
 			if ( i == 0 ):
-				if not nagiosmode:
+				if not args.nagiosmode:
 					print ldfmt % ("-- ID", "Type", "Size", "Strpsz", "Flags", "DskCache", "Status", "OS Path", "CacheCade", "InProgress" )
-			if not nagiosmode:
+			if not args.nagiosmode:
 				print ldfmt % (
 					arrayinfo[0],
 					arrayinfo[1],
@@ -766,7 +758,7 @@ if printarray:
 			arrayindex += 1
 			i += 1
 		controllerid += 1
-	if not nagiosmode:
+	if not args.nagiosmode:
 		print ''
 
 controllerid = 0
@@ -777,7 +769,7 @@ while controllerid < controllernumber:
 	controllerid += 1
 
 if totaldrivenumber:
-	if not nagiosmode:
+	if not args.nagiosmode:
 		print '-- Disk information --'
 
 	i = 0
@@ -828,11 +820,11 @@ if totaldrivenumber:
 		for array in arraydisk:
 			# Header
 			if ( i == 0 ):
-				if not nagiosmode:
+				if not args.nagiosmode:
 					print drvfmt % (
 					"-- ID", "Type", "Drive Model", "Size", "Status", "Speed", "Temp", "Slot ID", "LSI Device ID")
 			# Drive information
-			if not nagiosmode:
+			if not args.nagiosmode:
 				print drvfmt % (
 					str('c'+str(controllerid)+'u'+array[0]+'p'+array[1]),		# c0p0
 					array[2],							# HDD/SDD
@@ -845,7 +837,7 @@ if totaldrivenumber:
 					array[10])							# LSI ID
 			i = i + 1
 		controllerid += 1
-	if not nagiosmode:
+	if not args.nagiosmode:
 		print ''
 
 controllerid = 0
@@ -872,7 +864,7 @@ dbgprint('Total Configured Drives : ' + str(totalconfdrivenumber))
 dbgprint('Total Unconfigured Drives : ' + str(totalunconfdrivenumber))
 
 if totalunconfdrivenumber:
-	if not nagiosmode:
+	if not args.nagiosmode:
 		print '-- Unconfigured Disk information --'
 
 	controllerid = 0
@@ -905,11 +897,11 @@ if totalunconfdrivenumber:
 		for array in arraydisk:
 			# Header
 			if ( i == 0 ):
-				if not nagiosmode:
+				if not args.nagiosmode:
 					print drvfmt % (
 					"-- ID", "Type", "Drive Model", "Size", "Status", "Speed", "Temp", "Slot ID", "LSI Device ID")
 			# Drive information
-			if not nagiosmode:
+			if not args.nagiosmode:
 				print drvfmt % (
 					str('c'+str(controllerid)+'uXpY'),				# cXpY
 					array[0],							# HDD/SDD
@@ -922,10 +914,10 @@ if totalunconfdrivenumber:
 					array[8])							# LSI ID
 			i = i + 1
 		controllerid += 1
-	if not nagiosmode:
+	if not args.nagiosmode:
 		print ''
 
-if nagiosmode:
+if args.nagiosmode:
 	if bad:
 		print 'RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk)
 		sys.exit(2)
