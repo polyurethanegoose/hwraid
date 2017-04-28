@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import pdb
+import argparse
 if sys.platform == 'win32':
 	import ctypes
 
@@ -27,6 +28,7 @@ printarray = True
 printcontroller = True
 debugmode = False
 notempmode = False
+printbbustatus = True
 totaldrivenumber = 0
 
 # Hardcode a max of 16 HBA and 128 LDs for now. LDTable must be initialized to accept populating list of LD's into each ctlr's list.
@@ -558,11 +560,69 @@ def returnUnconfDiskInfo(output,controllerid):
 				table.append([ mtype, model, dsize, fstate, speed, temp, enclid, slotid, lsidid])
 	return table
 
+bbutable = []
+def returnBBUStatusLong(output):
+	table = []
+	cid = ''
+	bstate = ''
+	cstatus = ''
+	lcactive = ''
+	rscharge = ''
+	for line in output:
+		if re.match(r'^BBU status for Adapter:.*$',line.strip()):
+			cid = line.split(':')[1].strip()
+		if re.match(r'^Battery State.*:.*$',line.strip()):
+			bstate = line.split(':')[1].strip()
+		if re.match(r'^Charging Status.*:.*$',line.strip()):
+			cstatus = line.split(':')[1].strip()
+		if re.match(r'^Learn Cycle Active.*:.*$',line.strip()):
+			lcactive = line.split(':')[1].strip()
+		if re.match(r'^Relative State of Charge:.*$',line.strip()):
+			rscharge = line.split(':')[1].strip()
+	table.append([ 'c'+str(cid), bstate, cstatus, lcactive, str(rscharge)])
+	bbutable.extend(table)
+	return 0
+
+
+
 cmd = '%s -adpCount -NoLog' % (megaclipath)
 output = getOutput(cmd)
 controllernumber = returnControllerNumber(output)
 
 bad = False
+
+# List batteries
+bbutable = []
+if printbbustatus:
+	if not args.nagiosmode:
+		print '-- Battery information --'
+	controllerid = 0
+	while controllerid < controllernumber:
+		cmd = '%s -AdpBbuCmd -GetBbuStatus -a%d -NoLog' % (megaclipath, controllerid)
+		output = getOutput(cmd)
+		returnBBUStatusLong(output)
+		controllerid += 1
+	mlen = returnWdthFromArrayCol(bbutable,0)
+	flen = returnWdthFromArrayCol(bbutable,1)
+	bbufmt = "%-13s | %-14s | %-11s | %-16s| %-6s"
+	i = 0
+	for array in bbutable:
+		if ( i == 0 ):
+			if not args.nagiosmode:
+				print bbufmt % (
+				"-- Controller", "Battery Status", "Chrg Status", "Lrn Cycle Active","Charge")
+		if not args.nagiosmode:
+			print bbufmt % (
+				array[0],
+				array[1],
+				array[2],
+				array[3],
+				array[4])
+		if not array[3] == 'No':
+			batterylearning = True
+		i = i + 1
+	if not args.nagiosmode:
+		print ''
 
 # List available controller
 if printcontroller:
