@@ -66,6 +66,10 @@ parser.add_argument('--notemp',
                     action='store_true',
                     dest='notempmode',
                     help='Do not display temperature.')
+parser.add_argument('--unconfok',
+                    action='store_true',
+                    dest='unconfdisksareok',
+                    help='Compatibility for old scripts. Not being used right now.')
 args = parser.parse_args()
 
 # Functions
@@ -567,13 +571,14 @@ def returnUnconfDiskInfo(output,controllerid):
                 table.append([ mtype, model, dsize, fstate, speed, temp, enclid, slotid, lsidid])
     return table
 
-def returnJBODDiskInfo(output,controllerid):
+def returnJBODDiskInfo(output,controllerid,pcipath):
     arrayid = False
     diskid = False
     olddiskid = False
     enclid = False
     slotid = False
     lsidid = 'Unknown'
+    jbodrealpath = 'Unknown'
     table = []
     fstate = 'Offline'
     substate = 'Unknown'
@@ -582,6 +587,7 @@ def returnJBODDiskInfo(output,controllerid):
     mtype = 'Unknown'
     dsize = 'Unknown'
     temp = 'Unk0C'
+    diskprefix = str('/dev/disk/by-path/pci-' + pcipath + '-scsi-0:0:')
     for line in output:
         if re.match(r'Enclosure Device ID: .*$',line.strip()):
         # We match here early in the analysis so reset the vars if this is a new disk we're reading..
@@ -595,6 +601,7 @@ def returnJBODDiskInfo(output,controllerid):
                 temp = 'Unk0C'
                 slotid = False
                 lsidid = 'Unknown'
+				jbodrealpath = 'Unknown'
 
         elif re.match(r'^Coerced Size: ',line.strip()):
             dsize = line.split(':')[1].strip()
@@ -606,6 +613,9 @@ def returnJBODDiskInfo(output,controllerid):
             diskid = line.split(':')[1].strip()
         if re.match(r'^Device Id: .*$',line.strip()):
             lsidid = line.split(':')[1].strip()
+            diskpath = diskprefix + str(lsidid) + ':0'
+            if os.path.exists(diskpath):
+                jbodrealpath = os.path.realpath(diskpath)
         elif re.match(r'Slot Number: .*$',line.strip()):
             slotid = line.split(':')[1].strip()
         elif re.match(r'Firmware state: .*$',line.strip()):
@@ -637,7 +647,7 @@ def returnJBODDiskInfo(output,controllerid):
             if arrayid == False:
                 if subfstate == 'JBOD':
                     dbgprint('JBOD Disk: Arrayid: '+str(arrayid)+' DiskId: '+str(diskid)+' '+str(olddiskid)+' '+str(fstate))
-                table.append([ mtype, model, dsize, fstate, speed, temp, enclid, slotid, lsidid])
+                table.append([ mtype, model, dsize, fstate, speed, temp, enclid, slotid, lsidid, jbodrealpath])
     return table
 
 bbutable = []
@@ -955,13 +965,16 @@ dbgprint('Total JBOD Drives : ' + str(totaljboddrivenumber))
 dbgprint('Total Unconfigured Drives : ' + str(totalunconfdrivenumber))
 
 if totaljboddrivenumber:
-    '''TODO: How we map JBOD drives to 'OS Path'?'''
     if not args.nagiosmode:
         print '-- JBOD information --'
 
     controllerid = 0
     while controllerid < controllernumber:
         arrayid = 0
+
+        cmd = '%s -AdpGetPciInfo -a%d -NoLog' % (megaclipath, controllerid)
+        output = getOutput(cmd)
+        pcipath = returnHBAPCIInfo(output)
 
         cmd = '%s -LDInfo -lall -a%d -NoLog' % (megaclipath, controllerid)
         output = getOutput(cmd)
@@ -971,20 +984,20 @@ if totaljboddrivenumber:
 
         cmd = '%s -PDList -a%d -NoLog' % (megaclipath, controllerid)
         output = getOutput(cmd)
-        arraydisk = returnJBODDiskInfo(output,controllerid)
+        arraydisk = returnJBODDiskInfo(output,controllerid,pcipath)
 
         mlen = returnWdthFromArrayCol(arraydisk,1)
         flen = returnWdthFromArrayCol(arraydisk,3)
 
         # Adjust print format with widths computed above
-        drvfmt = "%-7s | %-4s | %-"+str(mlen)+"s | %-8s | %-"+str(flen+2)+"s | %-8s | %-4s | %-8s | %-8s"
+        drvfmt = "%-7s | %-4s | %-"+str(mlen)+"s | %-8s | %-"+str(flen+2)+"s | %-8s | %-4s | %-8s | %-13s | %-8s"
         i = 0
         for array in arraydisk:
             # Header
             if ( i == 0 ):
                 if not args.nagiosmode:
                     print drvfmt % (
-                    "-- ID", "Type", "Drive Model", "Size", "Status", "Speed", "Temp", "Slot ID", "LSI Device ID")
+                    "-- ID", "Type", "Drive Model", "Size", "Status", "Speed", "Temp", "Slot ID", "LSI Device ID", "OS Path")
             # Drive information
             if not args.nagiosmode:
                 print drvfmt % (
@@ -996,7 +1009,8 @@ if totaljboddrivenumber:
                     array[4],                            # Speed
                     array[5],                            # Temp
                     str('['+array[6]+':'+array[7]+']'),                # Slot ID
-                    array[8])                            # LSI ID
+                    array[8],                            # LSI ID
+                    array[9])                            # OS Path
             i = i + 1
         controllerid += 1
     if not args.nagiosmode:
